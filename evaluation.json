@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-10-25T20:30:12",
+  "rows_replayed": 200,
+  "normal_rows": 92,
+  "known_attacks": {
+    "total": 83,
+    "detected": 56,
+    "missed": 27,
+    "detection_rate": 67.5
+  },
+  "novel_attacks": {
+    "total": 25,
+    "detected": 15,
+    "missed": 10,
+    "detection_rate": 60.0
+  },
+  "missed_attacks": 37,
+  "false_alarms": 1,
+  "false_alarm_rate": 1.1,
+  "category_accuracy": {
+    "known": {
+      "flagged": 56,
+      "correct": 54,
+      "accuracy": 96.4
+    },
+    "novel": {
+      "flagged": 15,
+      "correct": 4,
+      "accuracy": 26.7
+    }
+  },
+  "novel_flagged_as_unknown": 9,
+  "novel_by_attack": {
+    "saint": {
+      "total": 4,
+      "detected": 4
+    },
+    "httptunnel": {
+      "total": 2,
+      "detected": 0
+    },
+    "sendmail": {
+      "total": 1,
+      "detected": 0
+    },
+    "mscan": {
+      "total": 4,
+      "detected": 4
+    },
+    "processtable": {
+      "total": 3,
+      "detected": 3
+    },
+    "snmpguess": {
+      "total": 3,
+      "detected": 0
+    },
+    "apache2": {
+      "total": 5,
+      "detected": 4
+    },
+    "mailbomb": {
+      "total": 2,
+      "detected": 0
+    },
+    "snmpgetattack": {
+      "total": 1,
+      "detected": 0
+    }
+  }
+}

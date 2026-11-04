@@ -1,44 +1,30 @@
-# Python virtual environments
+# Virtual environments
 venv/
 venv_old/
-.env/
 .venv/
 
-# Python cache files
+# Python cache
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
 
-# Database files
+# Database
 *.db
 *.sqlite
 *.sqlite3
 
-# Dataset files (large)
+# Raw datasets
 data/
-*.txt
-*.csv
+NSL_KDD-master/
+**/NSL_KDD-master/
+KDDTrain*.txt
+KDDTest*.txt
+KDDTrain*.csv
+KDDTest*.csv
 
-# Model files (can be large)
-*.joblib
-*.pkl
-*.pickle
-*.h5
-*.keras
-*.pt
-*.pth
-
-# Generated outputs
-replay_out.txt
-evaluation.json
-
-# Logs
+# Temporary files
 *.log
+replay_out.txt
 
-# IDE files
+# IDE
 .vscode/
 .idea/
-
-# OS files
-.DS_Store
-Thumbs.db

@@ -1,0 +1,4 @@
+model,accuracy,precision,recall,false_positive_rate,f1
+Isolation Forest,80.15,97.29,66.98,2.46,79.34
+Random Forest,77.87,96.89,63.14,2.68,76.46
+One-Class SVM,77.02,91.72,65.55,7.82,76.46
