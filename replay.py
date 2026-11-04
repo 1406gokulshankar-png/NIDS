@@ -10,10 +10,12 @@ import argparse
 import joblib
 import numpy as np
 from collections import Counter
+
 from preprocess import preprocess
 from app import app                      # our Flask app (gives access to the database)
-from database import db, Alert
+from database import db, Alert, ReplayLog          # NEW: ReplayLog added
 from severity import compute_severity
+from evaluation import evaluate, print_summary, save_evaluation   # NEW
 
 # ---- Settings you can change from the command line ----
 parser = argparse.ArgumentParser()
@@ -48,14 +50,39 @@ for m in (best_model, iso, cat_model):
 
 print("Layer 1 model:", best_name, "| Layer 2: Isolation Forest")
 
-# ---- Get the test data (preprocess() returns 5 things, we need two) ----
+# ---- Get the data (preprocess() returns 5 things, we need three) ----
 print("Loading test data...")
-_, X_test, _, test_df, _ = preprocess()
+X_train, X_test, _, test_df, _ = preprocess()
 
 # Pick random rows from the test set (the same seed gives the same rows)
 rng = np.random.RandomState(args.seed)
 n = min(args.rows, len(X_test))
 row_numbers = rng.choice(len(X_test), size=n, replace=False)
+
+
+def make_scaler(model):
+    """Build a function that rescales a model's raw anomaly value to 0.5 - 1.0.
+    0.5 = right at the model's alarm threshold.
+    1.0 = as strange as the top 20% of the rows the model flags."""
+    ref = X_train.sample(n=5000, random_state=0)       # a sample is enough
+    raw_ref = -model.score_samples(ref)                # higher = stranger
+    threshold = -model.offset_                         # the model's alarm line
+
+    # Look only at rows the model would flag, and use their spread as the scale
+    flagged_ref = raw_ref[raw_ref > threshold]
+    if len(flagged_ref) > 0:
+        top = max(np.percentile(flagged_ref, 80), threshold + 1e-6)
+    else:
+        top = threshold + 1e-6
+
+    def scale(raw):
+        s = (raw - threshold) / (top - threshold)      # 0 at threshold, 1 at "top"
+        return float(0.5 + 0.5 * min(max(s, 0.0), 1.0))
+    return scale
+
+
+iso_scale = make_scaler(iso)
+best_scale = make_scaler(best_model) if best_kind == "anomaly" else None
 
 
 def check_row(row):
@@ -66,7 +93,7 @@ def check_row(row):
         flagged = score >= 0.5
     else:  # an anomaly detector won
         flagged = best_model.predict(row)[0] == -1
-        score = float(-best_model.decision_function(row)[0])
+        score = best_scale(-best_model.score_samples(row)[0])
 
     if flagged:
         category = cat_model.predict(row)[0]
@@ -76,7 +103,7 @@ def check_row(row):
 
     # --- Layer 2: Isolation Forest looks for anything strange ---
     if iso.predict(row)[0] == -1:
-        return "Unknown", float(-iso.score_samples(row)[0])
+        return "Unknown", iso_scale(-iso.score_samples(row)[0])
 
     return None                            # looks normal, no alert
 
@@ -85,6 +112,7 @@ def check_row(row):
 with app.app_context():
     if args.clear:
         Alert.query.delete()
+        ReplayLog.query.delete()           # NEW: also clear the replay log
         db.session.commit()
         print("Old alerts deleted.")
 
@@ -93,15 +121,32 @@ with app.app_context():
     caught = 0          # real attacks that raised an alert
     false_alarms = 0    # normal rows that raised an alert
     severity_counts = Counter()   # how many alerts of each severity
+    results = []        # NEW: one entry for EVERY replayed row (used for evaluation)
 
     for i in row_numbers:
         row = X_test.iloc[[int(i)]]            # one row, still with column names
         info = test_df.iloc[int(i)]            # original info about that row
         result = check_row(row)
 
+        # ---- NEW (Feature 1): remember what happened to this row, alert or not ----
+        flagged = result is not None
+        results.append({
+            "row_index": int(i),
+            "attack_name": info["attack_name"],             # true name, e.g. "neptune"
+            "true_category": info["category"],              # true category, e.g. "DoS"
+            "is_novel": bool(info["is_novel"]),             # True = never seen in training
+            "flagged": flagged,                             # did an alert fire?
+            "alert_type": result[0] if flagged else None,   # e.g. "DoS" or "Unknown"
+        })
+
+        # ---- NEW (Feature 2): log EVERY row for the drift monitor ----
+        db.session.add(ReplayLog(test_row_index=int(i), flagged=flagged))
+        if len(results) % 100 == 0:        # save in batches of 100 (faster than every row)
+            db.session.commit()
+
         if result is not None:
             attack_type, score = result
-            severity = compute_severity(attack_type, score)   # NEW in Phase 6
+            severity = compute_severity(attack_type, score)
             alert = Alert(
                 source_info=f"{info['protocol_type']} / {info['service']}",
                 attack_type=attack_type,
@@ -122,15 +167,21 @@ with app.app_context():
 
         time.sleep(args.delay)                 # pretend traffic arrives over time
 
+    db.session.commit()                        # NEW: save any log rows still waiting
+
     total_attacks = int(test_df.iloc[row_numbers]["is_attack"].sum())
     print("\n" + "=" * 50)
     print("REPLAY SUMMARY")
     print("=" * 50)
     print("Rows replayed        :", n)
-    print("Alerts saved         :", alerts_made)
-    print("Real attacks in rows :", total_attacks)
-    print("Attacks caught       :", caught)
-    print("False alarms         :", false_alarms)
-    print("\nAlerts by severity:")
-    for level in ["Low", "Medium", "High", "Critical"]:
-        print(f"  {level:<9}: {severity_counts[level]}")
+    print("Alerts raised        :", alerts_made)                       # NEW: print what we counted
+    print(f"Attacks caught       : {caught} of {total_attacks}")        # NEW
+    print("False alarms         :", false_alarms)                      # NEW
+    print("Alerts by severity   :", {lvl: severity_counts[lvl]         # NEW
+                                     for lvl in ("Critical", "High", "Medium", "Low")})
+
+    # ---- NEW (Feature 1): novel-attack evaluation ----
+    metrics = evaluate(results)
+    print_summary(metrics)
+    save_evaluation(metrics)
+    print("Saved evaluation.json")

@@ -4,7 +4,8 @@
 import os
 from flask import Flask, jsonify, render_template, request, redirect, url_for
 from sqlalchemy import func
-from database import db, Alert
+from database import db, Alert, ReplayLog        # NEW: ReplayLog added
+from evaluation import load_evaluation            # NEW
 
 # Folder where this file lives (so the database always ends up in the project root)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -26,7 +27,7 @@ def create_app():
 
     db.init_app(app)
 
-    # Create the tables if they don't exist yet
+    # Create the tables if they don't exist yet (this also creates the new replay_log table)
     with app.app_context():
         db.create_all()
 
@@ -84,6 +85,44 @@ def create_app():
         alert.status = new_status
         db.session.commit()
         return jsonify(alert.to_dict())
+
+    # ---- Explain one alert with SHAP (used by the Explain button) ----
+    @app.route("/api/alerts/<int:alert_id>/explain")
+    def explain_alert(alert_id):
+        alert = db.session.get(Alert, alert_id)
+        if alert is None:
+            return jsonify({"error": "alert not found"}), 404
+        if alert.test_row_index is None:
+            return jsonify({"error": "this alert has no test row to explain"}), 400
+
+        # Imported here so the dashboard starts fast; SHAP loads on first use
+        from explain import explain_row
+        result = explain_row(alert.test_row_index)
+        result["alert"] = alert.to_dict()
+        return jsonify(result)
+
+    # ---- NEW (Feature 1): novel-attack evaluation numbers (written by replay.py) ----
+    @app.route("/api/evaluation")
+    def api_evaluation():
+        data = load_evaluation()
+        if data is None:
+            return jsonify({"error": "No evaluation yet. Run replay.py first."}), 404
+        return jsonify(data)
+
+    # ---- NEW (Feature 2): concept drift report.
+    #      Optional: /api/drift?last=500 uses only the newest 500 replayed rows ----
+    @app.route("/api/drift")
+    def api_drift():
+        last = request.args.get("last", type=int)
+
+        query = ReplayLog.query.order_by(ReplayLog.id.desc())
+        if last:
+            query = query.limit(last)
+        row_indices = [log.test_row_index for log in query.all()]
+
+        # Imported here so the app starts fast; the data loads on first use
+        from drift import compute_drift
+        return jsonify(compute_drift(row_indices))
 
     return app
 

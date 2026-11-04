@@ -1,20 +1,44 @@
+# Python virtual environments
+venv/
+venv_old/
+.env/
+.venv/
+
 # Python cache files
 __pycache__/
 *.py[cod]
-*.pyc
+*$py.class
 
-# Virtual environment
-venv/
-.venv/
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
-# Environment variables and secrets
-.env
-.env.*
+# Dataset files (large)
+data/
+*.txt
+*.csv
 
-# IDE and OS files
-.vscode/
-.DS_Store
-Thumbs.db
+# Model files (can be large)
+*.joblib
+*.pkl
+*.pickle
+*.h5
+*.keras
+*.pt
+*.pth
+
+# Generated outputs
+replay_out.txt
+evaluation.json
 
 # Logs
 *.log
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

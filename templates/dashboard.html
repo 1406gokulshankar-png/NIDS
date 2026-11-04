@@ -61,6 +61,16 @@
     button:disabled { opacity: 0.4; cursor: default; }
     select { padding: 4px; }
     .empty { text-align: center; color: #888; padding: 20px; }
+
+    /* ---------- SHAP explanation panel ---------- */
+    #explain-panel { display: none; margin-top: 20px; background: white; border-radius: 8px;
+                     padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+    #explain-panel h3 { margin: 0 0 4px 0; font-size: 15px; }
+    #explain-panel .hint { color: #666; font-size: 13px; margin: 0 0 10px 0; }
+    .barcell { width: 40%; }
+    .bar { height: 14px; border-radius: 3px; }
+    .bar.attack { background: #c62828; }
+    .bar.normal { background: #3f6fd1; }
   </style>
 </head>
 
@@ -116,6 +126,9 @@
         <tbody id="alert-rows"></tbody>
       </table>
     </div>
+
+    <!-- SHAP explanation (filled in by JavaScript when Explain is clicked) -->
+    <div id="explain-panel"></div>
   </main>
 
   <script>
@@ -196,6 +209,7 @@
                 ${a.status === "Acknowledged" ? "disabled" : ""}>Acknowledge</button>
               <button onclick="setStatus(${a.id}, 'False Positive')"
                 ${a.status === "False Positive" ? "disabled" : ""}>False positive</button>
+              <button onclick="explainAlert(${a.id})">Explain</button>
             </td>
           </tr>`;
       }).join("");
@@ -209,6 +223,45 @@
         body: JSON.stringify({ status: status }),
       });
       refresh();    // show the change straight away
+    }
+
+    // ---------- 4b. Explain button: ask Flask for SHAP results and draw bars ----------
+    async function explainAlert(id) {
+      const panel = document.getElementById("explain-panel");
+      panel.style.display = "block";
+      panel.innerHTML = `<p>Explaining alert #${id}... (the first click can take about 20 seconds)</p>`;
+      panel.scrollIntoView({ behavior: "smooth" });
+
+      try {
+        const res = await fetch(`/api/alerts/${id}/explain`);
+        const d = await res.json();
+        if (!res.ok) { panel.innerHTML = `<p>${d.error}</p>`; return; }
+
+        // The longest bar = the biggest influence; others are drawn relative to it
+        const biggest = Math.max(...d.features.map(f => Math.abs(f.shap))) || 1;
+        const rows = d.features.map(f => {
+          const width = Math.round(Math.abs(f.shap) / biggest * 100);
+          const cls = f.shap < 0 ? "attack" : "normal";
+          return `<tr>
+            <td>${f.feature}</td>
+            <td>${f.value}</td>
+            <td class="barcell"><div class="bar ${cls}" style="width:${width}%"></div></td>
+            <td>${f.direction}</td>
+          </tr>`;
+        }).join("");
+
+        panel.innerHTML = `
+          <h3>Why was alert #${d.alert.id} flagged? (${d.alert.attack_type}, ${d.alert.severity})</h3>
+          <p class="hint">Model: ${d.model} | True label in the dataset: ${d.true_label}.
+             Red bars pushed the row toward "attack", blue bars toward "normal".</p>
+          <table>
+            <thead><tr><th>Feature</th><th>Value</th><th>Influence</th><th>Direction</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      } catch (err) {
+        panel.innerHTML = "<p>Could not explain this alert. Check the terminal for errors.</p>";
+        console.error(err);
+      }
     }
 
     // ---------- 5. Refresh everything now, and again every 5 seconds ----------

@@ -1,5 +1,5 @@
 # database.py
-# Purpose: describe the database table (the "Alerts" table).
+# Purpose: describe the database tables (the "Alerts" table and the "ReplayLog" table).
 
 from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
@@ -38,3 +38,19 @@ class Alert(db.Model):
             "status": self.status,
             "test_row_index": self.test_row_index,
         }
+
+
+# ---------------- NEW (Feature 2) ----------------
+class ReplayLog(db.Model):
+    """One row = one test row that the replay checked (alert or not).
+    The drift monitor uses this to know which traffic we have actually seen."""
+    __tablename__ = "replay_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    test_row_index = db.Column(db.Integer, nullable=False)   # row number in the test set
+    flagged = db.Column(db.Boolean, default=False)           # did this row raise an alert?
